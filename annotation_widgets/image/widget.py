@@ -333,7 +333,7 @@ class CanvasView(tk.Canvas):
         elif event.char.lower() == "f":
             self.fit_image()
         else:
-            self.logic.handle_key(key=event.char.lower())
+            self.logic.handle_key(key=event.char.lower(), event=event)
 
         self.last_key_press_time = time.time()
         self.logic.update_time_counter("keyboard")

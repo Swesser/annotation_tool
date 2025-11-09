@@ -133,14 +133,17 @@ class ObjectFigureController(AbstractFigureController):
         self.mode = Mode.IDLE
         self.update_selection(self.cursor_x, self.cursor_y)
 
-    def copy(self):
+    def copy(self, filter_class: Optional[str] = None):
         self.serialized_figures_buffer = list()
-        
+
         if self.selected_figure_id is not None:
             figures_to_add = [self.figures[self.selected_figure_id]]
         else:
-            figures_to_add = [figure for figure in self.figures]
-            
+            if filter_class is not None:
+                figures_to_add = [f for f in self.figures if f.label == filter_class]
+            else:
+                figures_to_add = [figure for figure in self.figures]
+
         for figure in figures_to_add:
             self.serialized_figures_buffer.append(
                 {

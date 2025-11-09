@@ -90,11 +90,16 @@ class AnnotationStatusBar(tk.Frame):
         trash_color = "red" if status_data.is_trash else self.trash_label.master.cget('bg')
         self.trash_label.config(text=trash_text, bg=trash_color)
 
-        hidden_text = "All Visible"
-        hidden_text = "Review Hidden" if status_data.review_labels_hidden else hidden_text
-        hidden_text = "All Hidden" if status_data.figures_hidden  else hidden_text
+        if status_data.filtered_class is not None:
+            class_name_short = status_data.filtered_class[:6]
+            hidden_text = f"ONLY {class_name_short}"
+            hidden_color = "red"
+        else:
+            hidden_text = "All Visible"
+            hidden_text = "Review Hidden" if status_data.review_labels_hidden else hidden_text
+            hidden_text = "All Hidden" if status_data.figures_hidden else hidden_text
+            hidden_color = self.hidden_label.master.cget('bg') if hidden_text == "All Visible" else "blue"
 
-        hidden_color = self.hidden_label.master.cget('bg') if hidden_text == "All Visible" else "blue"
         self.hidden_label.config(text=hidden_text, bg=hidden_color)
 
         self.item_id_label.config(text=f"Img id: {status_data.item_id}")

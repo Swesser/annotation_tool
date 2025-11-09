@@ -3,7 +3,7 @@ import os
 from collections import defaultdict
 from dataclasses import dataclass
 import random
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from annotation_widgets.image.models import Label
 import cv2
@@ -35,6 +35,7 @@ class StatusData:
     number_of_items: int
     figures_hidden: bool
     review_labels_hidden: bool
+    filtered_class: Optional[str] = None
 
 
 class ImageLabelingLogic(AbstractImageAnnotationLogic):
@@ -68,6 +69,7 @@ class ImageLabelingLogic(AbstractImageAnnotationLogic):
         self.scale_factor = 1
         self.selecting_class = False
         self.force_redrawing = False
+        self.filtered_class_label: Optional[str] = None
 
         self.init_canvas = None
         self.blurred_image: np.ndarray = None
@@ -120,6 +122,7 @@ class ImageLabelingLogic(AbstractImageAnnotationLogic):
             number_of_items=len(self.img_names),
             figures_hidden=self.hide_figures,
             review_labels_hidden=self.hide_review_labels,
+            filtered_class=self.filtered_class_label
         )
 
     @property
@@ -219,10 +222,13 @@ class ImageLabelingLogic(AbstractImageAnnotationLogic):
         if not self.hide_figures:
             # Draw selected blur figure
             for figure in blur_figures:
+                if self.filtered_class_label is not None and figure.label != self.filtered_class_label:
+                    continue
+
                 if figure.selected:
                     self.canvas = figure.draw_figure(
-                        canvas=self.canvas, 
-                        elements_scale_factor=self.scale_factor, 
+                        canvas=self.canvas,
+                        elements_scale_factor=self.scale_factor,
                         show_label_names=False,
                         show_object_size=False,
                         label=self.labels[figure.figure_type][figure.label],
@@ -231,9 +237,12 @@ class ImageLabelingLogic(AbstractImageAnnotationLogic):
                     )
 
             for figure_id, figure in enumerate(sorted(figures_to_draw, key=lambda x: x.surface, reverse=True)):
+                if self.filtered_class_label is not None and figure.label != self.filtered_class_label:
+                    continue
+
                 self.canvas = figure.draw_figure(
-                    canvas=self.canvas, 
-                    elements_scale_factor=self.scale_factor, 
+                    canvas=self.canvas,
+                    elements_scale_factor=self.scale_factor,
                     show_label_names=self.show_label_names,
                     show_object_size=self.show_object_size,
                     label=self.labels[figure.figure_type][figure.label],
@@ -260,6 +269,7 @@ class ImageLabelingLogic(AbstractImageAnnotationLogic):
     def load_item(self, next: bool = True):
         self.hide_figures = False
         self.hide_review_labels = False
+        self.filtered_class_label = None
         assert 0 <= self.item_id < len(self.img_names), f"The Image ID {self.item_id} is out of range of the images list: {len(self.img_names)}"
         img_name = self.img_names[self.item_id]
         self.orig_image = cv2.imread(os.path.join(self.img_dir, img_name))
@@ -342,9 +352,27 @@ class ImageLabelingLogic(AbstractImageAnnotationLogic):
         self.hide_figures = not self.hide_figures
         if not self.hide_figures:
             self.force_redrawing = True
+        if self.hide_figures:
+            self.filtered_class_label = None
 
     def switch_hiding_review_labels(self):
         self.hide_review_labels = not self.hide_review_labels
+
+    def toggle_class_filter(self):
+        if self.project_data.stage is AnnotationStage.REVIEW:
+            return
+
+        if self.controller.selected_figure_id is not None:
+            selected_figure = self.controller.figures[self.controller.selected_figure_id]
+            target_class = selected_figure.label
+        else:
+            target_class = self.controller.active_label.name
+
+        if self.filtered_class_label == target_class:
+            self.filtered_class_label = None
+        else:
+            self.filtered_class_label = target_class
+            self.hide_figures = False
 
     def change_label(self, label_hotkey: int):
         if self.editing_blocked: return              
@@ -419,28 +447,35 @@ class ImageLabelingLogic(AbstractImageAnnotationLogic):
     
     def copy(self):
         if self.editing_blocked: return
-        self.controller.copy()
+        self.controller.copy(filter_class=self.filtered_class_label)
 
     def paste(self):
         if self.editing_blocked: return
         self.controller.paste()
         self.item_changed = True
 
-    def handle_key(self, key: str):
-        if key.isdigit(): 
+    def handle_key(self, key: str, event=None):
+        shift_pressed = False
+        if event is not None:
+            shift_pressed = (event.state & 0x0001) != 0
+
+        if key.isdigit():
             self.change_label(key)
         elif key.lower() == "d":
             self.delete_command()
         elif key.lower() == "t":
             self.toggle_image_trash_tag()
         elif key.lower() == "e":
-            self.switch_hiding_figures()
+            if shift_pressed:
+                self.toggle_class_filter()
+            else:
+                self.switch_hiding_figures()
         elif key.lower() == "r":
-            self.switch_hiding_review_labels() 
+            self.switch_hiding_review_labels()
         elif key.lower() == "n":
-            self.switch_object_names_visibility() 
+            self.switch_object_names_visibility()
         elif key.lower() == "h":
-            self.switch_object_size_visibility() 
+            self.switch_object_size_visibility()
         elif key.lower() == "s":
             self.make_image_worse = not self.make_image_worse
         elif key.lower() == "g":
