@@ -152,7 +152,7 @@ class ImageFilteringLogic(AbstractImageAnnotationLogic):
         self.labeled_image.selected = not self.labeled_image.selected
         self.item_changed = True
 
-    def handle_key(self, key: str):
+    def handle_key(self, key: str, event=None):
         if key.lower() == "d" or key.lower() == "k":
             self.select_image()
         elif key.lower() == "z":

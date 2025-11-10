@@ -245,7 +245,7 @@ class EventValidationLogic(AbstractImageAnnotationLogic):
         self.answers[question] = selected_answer
         self.item_changed = True
 
-    def handle_key(self, key: str):
+    def handle_key(self, key: str, event=None):
         if key.lower() == "q":
             self.backward()
         elif key.lower() == "w":

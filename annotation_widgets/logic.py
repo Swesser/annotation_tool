@@ -112,7 +112,7 @@ class AbstractAnnotationLogic(ABC):
     def handle_esc(self):
         pass
 
-    def handle_key(self, key: str):
+    def handle_key(self, key: str, event=None):
         pass
 
     def on_shift_press(self):
