@@ -211,8 +211,7 @@ class CanvasView(tk.Canvas):
             delta_y = (self.click_win_y - win_cursor_y) / self.scale_factor
             self.y0 = self.start_y0 + delta_y
 
-            self.x0 = max(0, self.x0)
-            self.y0 = max(0, self.y0)
+            # Allow panning in all directions (removed min constraints)
             self.x0 = min(int(self.logic.orig_image.shape[1]*0.9), self.x0)
             self.y0 = min(int(self.logic.orig_image.shape[0]*0.9), self.y0)
 
@@ -352,7 +351,15 @@ class CanvasView(tk.Canvas):
         self.scale_factor = min(h_scale, w_scale)
 
         self.logic.scale_factor = self.scale_factor
-        self.x0, self.y0 = 0, 0
+
+        # Center the image in the window
+        scaled_img_w = img_w * self.scale_factor
+        scaled_img_h = img_h * self.scale_factor
+
+        # Calculate offset to center (can be negative for centering)
+        self.x0 = -(win_w - scaled_img_w) / (2 * self.scale_factor)
+        self.y0 = -(win_h - scaled_img_h) / (2 * self.scale_factor)
+
         self.update_frame = True
 
     def scale_event_wrapper(self, handler):
@@ -376,7 +383,7 @@ class CanvasView(tk.Canvas):
         # Determine zoom direction
         scale_multiplier = 1.1
         if event.num == 5 or event.delta == -120:  # Zoom out
-            self.scale_factor = max(self.scale_factor / scale_multiplier, 0.5)
+            self.scale_factor = max(self.scale_factor / scale_multiplier, 0.35)
         elif event.num == 4 or event.delta == 120:  # Zoom in
             self.scale_factor = min(self.scale_factor * scale_multiplier, 10)
 
@@ -384,9 +391,7 @@ class CanvasView(tk.Canvas):
         self.x0 = (cursor_x - (event.x / self.scale_factor))
         self.y0 = (cursor_y - (event.y / self.scale_factor))
 
-        # Restrict x0y0 to be no less than 0 and no more than 2/3 of image
-        self.x0 = max(0, self.x0)
-        self.y0 = max(0, self.y0)
+        # Allow panning in all directions (removed min constraints)
         self.x0 = min(int(self.logic.orig_image.shape[1]*0.9), self.x0)
         self.y0 = min(int(self.logic.orig_image.shape[0]*0.9), self.y0)
 
@@ -428,20 +433,56 @@ class CanvasView(tk.Canvas):
         return int(x_img), int(y_img)
 
     def get_image_zone(self, img: np.ndarray, x0: int, y0: int, scale: float) -> np.ndarray:
-        win_w=self.winfo_width()
-        win_h=self.winfo_height()
+        win_w = self.winfo_width()
+        win_h = self.winfo_height()
+        img_h, img_w = img.shape[:2]
 
-        h_lim = int(win_h / scale + y0)
-        w_lim = int(win_w / scale + x0)
+        x0_int = int(x0)
+        y0_int = int(y0)
 
-        cropped = img[int(y0):h_lim, int(x0):w_lim]
+        # Fast path: no padding needed (most common case)
+        if x0_int >= 0 and y0_int >= 0:
+            h_lim = int(win_h / scale + y0)
+            w_lim = int(win_w / scale + x0)
+            cropped = img[y0_int:h_lim, x0_int:w_lim]
 
-        h, w, c = cropped.shape
+            h, w, c = cropped.shape
+            w_scaled = int(w * scale)
+            h_scaled = int(h * scale)
+            cropped = cv2.resize(cropped, (w_scaled, h_scaled), interpolation=cv2.INTER_AREA)
+            return cropped
 
+        # Slow path: padding needed (when panning beyond edges)
+        view_w = int(win_w / scale)
+        view_h = int(win_h / scale)
+
+        crop_x_start = max(0, x0_int)
+        crop_y_start = max(0, y0_int)
+        crop_x_end = min(img_w, x0_int + view_w)
+        crop_y_end = min(img_h, y0_int + view_h)
+
+        cropped = img[crop_y_start:crop_y_end, crop_x_start:crop_x_end]
+
+        pad_left = max(0, -x0_int)
+        pad_top = max(0, -y0_int)
+        pad_right = max(0, x0_int + view_w - img_w)
+        pad_bottom = max(0, y0_int + view_h - img_h)
+
+        if pad_left > 0 or pad_top > 0 or pad_right > 0 or pad_bottom > 0:
+            cropped = cv2.copyMakeBorder(
+                cropped,
+                pad_top, pad_bottom, pad_left, pad_right,
+                cv2.BORDER_CONSTANT,
+                value=[0, 0, 0]
+            )
+
+        h, w = cropped.shape[:2]
         w_scaled = int(w * scale)
         h_scaled = int(h * scale)
 
-        cropped = cv2.resize(cropped, (w_scaled, h_scaled), interpolation=cv2.INTER_AREA)
+        if w_scaled > 0 and h_scaled > 0:
+            cropped = cv2.resize(cropped, (w_scaled, h_scaled), interpolation=cv2.INTER_AREA)
+
         return cropped
 
     def report_callback_exception(self, exc_type, exc_value, exc_traceback):
