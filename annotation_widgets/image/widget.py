@@ -304,6 +304,8 @@ class CanvasView(tk.Canvas):
                 self.logic.redo()
             elif event.keysym.lower() == 'c':
                 self.logic.copy()
+            elif event.keysym.lower() == 'x':
+                self.logic.copy_same_class()
             elif event.keysym.lower() == 'v':
                 self.logic.paste()
             time.sleep(0.1) # Added to prevent too fast redo or paste

@@ -421,6 +421,10 @@ class ImageLabelingLogic(AbstractImageAnnotationLogic):
         if self.editing_blocked: return
         self.controller.copy()
 
+    def copy_same_class(self):
+        if self.editing_blocked: return
+        self.controller.copy_same_class()
+
     def paste(self):
         if self.editing_blocked: return
         self.controller.paste()
