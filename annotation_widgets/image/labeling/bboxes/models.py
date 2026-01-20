@@ -38,12 +38,14 @@ class BBox(Figure):
         self.label = label
         self.active_point_id = None
         self.selected = False
+        self.marked_for_copy = False
         self.point_number = 4
 
     @reconstructor
     def init_on_load(self):
         self.active_point_id = None
         self.selected = False
+        self.marked_for_copy = False
         self.point_number = 4
 
     @property
@@ -192,6 +194,11 @@ class BBox(Figure):
             circle_radius = max(1, int(settings.bbox_handler_size / ((elements_scale_factor + 1e-7) ** (1/3))))
             cv2.circle(canvas, (int(point.x), int(point.y)), circle_radius, (255, 255, 255), -1)
             cv2.circle(canvas, (int(point.x), int(point.y)), circle_radius, (0, 0, 0), 2)
+
+        if self.marked_for_copy:
+            line_width = max(1, int(2 / ((elements_scale_factor + 1e-7) ** (1/3))))
+            cv2.line(canvas, (int(self.x1), int(self.y1)), (int(self.x2), int(self.y2)), (255, 255, 255), line_width)
+            cv2.line(canvas, (int(self.x2), int(self.y1)), (int(self.x1), int(self.y2)), (255, 255, 255), line_width)
 
         return canvas
 

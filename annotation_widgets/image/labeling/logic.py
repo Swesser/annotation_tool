@@ -274,11 +274,15 @@ class ImageLabelingLogic(AbstractImageAnnotationLogic):
         else:
             self.controller.figures = self.figures # Can edit only figures
 
+        for figure in self.controller.figures:
+            if hasattr(figure, 'marked_for_copy'):
+                figure.marked_for_copy = False
+
         h, w, c = self.orig_image.shape
         self.controller.img_height, self.controller.img_width = h, w
         self.labeled_image.height = h
         self.labeled_image.width = w
-    
+
         self.is_trash = self.labeled_image.trash
         self.controller.take_snapshot()
 
@@ -420,6 +424,10 @@ class ImageLabelingLogic(AbstractImageAnnotationLogic):
     def copy(self):
         if self.editing_blocked: return
         self.controller.copy()
+
+    def toggle_copy(self):
+        if self.editing_blocked: return
+        self.controller.toggle_copy()
 
     def paste(self):
         if self.editing_blocked: return

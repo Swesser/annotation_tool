@@ -135,12 +135,12 @@ class ObjectFigureController(AbstractFigureController):
 
     def copy(self):
         self.serialized_figures_buffer = list()
-        
+
         if self.selected_figure_id is not None:
             figures_to_add = [self.figures[self.selected_figure_id]]
         else:
             figures_to_add = [figure for figure in self.figures]
-            
+
         for figure in figures_to_add:
             self.serialized_figures_buffer.append(
                 {
@@ -148,6 +148,26 @@ class ObjectFigureController(AbstractFigureController):
                     "type": type(figure)
                 }
             )
+
+    def toggle_copy(self):
+        if self.selected_figure_id is None:
+            return
+
+        selected_figure = self.figures[self.selected_figure_id]
+        if not hasattr(selected_figure, 'marked_for_copy'):
+            return
+
+        selected_figure.marked_for_copy = not selected_figure.marked_for_copy
+
+        self.serialized_figures_buffer = list()
+        for figure in self.figures:
+            if hasattr(figure, 'marked_for_copy') and figure.marked_for_copy:
+                self.serialized_figures_buffer.append(
+                    {
+                        "kwargs": figure.serialize(),
+                        "type": type(figure)
+                    }
+                )
 
     def paste(self):
         for figure in self.serialized_figures_buffer:
