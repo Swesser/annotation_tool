@@ -74,9 +74,7 @@ class ImageLabelingLogic(AbstractImageAnnotationLogic):
         self.blurred_image: np.ndarray = None
         self.prev_blur_figures = list()
 
-        # Load camera masks
         self.camera_masks = self._load_camera_masks(project_data.id)
-        self.current_camera_mask = None
 
         if project_data.stage is AnnotationStage.REVIEW:
             labels = Label.get_review_labels()
@@ -138,59 +136,45 @@ class ImageLabelingLogic(AbstractImageAnnotationLogic):
         return LabelingPathManager(project_id)
 
     def _load_camera_masks(self, project_id: int) -> Dict:
-        """Load camera masks from camera_masks.json if it exists"""
+        """Load camera masks from meta.json"""
         pm = self.get_path_manager(project_id)
-        if os.path.exists(pm.camera_masks_path):
-            return open_json(pm.camera_masks_path)
-        return {}
+        if not os.path.exists(pm.meta_ann_path):
+            return {}
+
+        meta_data = open_json(pm.meta_ann_path)
+        return meta_data.get("camera_masks", {})
 
     def _get_camera_id_from_filename(self, filename: str) -> str:
-        """Extract 8-character camera ID from image filename"""
+        """Extract camera ID from image filename (first 8 characters)"""
         return filename[:8]
 
+    def _scale_polygon(self, polygon: List, scale_x: float, scale_y: float) -> np.ndarray:
+        """Scale polygon coordinates to target resolution"""
+        poly_array = np.array(polygon, dtype=np.float32)
+        poly_array[:, 0] *= scale_x
+        poly_array[:, 1] *= scale_y
+        return poly_array.astype(np.int32)
+
     def _apply_camera_mask(self, image: np.ndarray, camera_id: str) -> np.ndarray:
-        """Apply camera mask overlay to the image"""
+        """Apply semi-transparent camera mask overlay to image"""
         if not self.camera_masks or camera_id not in self.camera_masks:
             return image
 
         mask_data = self.camera_masks[camera_id]
+        polygons = mask_data.get("polygons", [mask_data.get("polygon")])
 
-        # Support both old format (single polygon) and new format (multiple polygons)
-        if "polygon" in mask_data:
-            polygons = [mask_data["polygon"]]
-        else:
-            polygons = mask_data["polygons"]
-
-        # Scale polygons to match current image resolution
-        mask_height = mask_data["height"]
-        mask_width = mask_data["width"]
         img_height, img_width = image.shape[:2]
+        scale_x = img_width / mask_data["width"]
+        scale_y = img_height / mask_data["height"]
 
-        scale_x = img_width / mask_width
-        scale_y = img_height / mask_height
-
-        # Create semi-transparent overlay
         overlay = image.copy()
+        scaled_polygons = [self._scale_polygon(p, scale_x, scale_y) for p in polygons]
 
-        # Process each polygon
-        scaled_polygons = []
-        for polygon in polygons:
-            poly_array = np.array(polygon, dtype=np.float32)
-            poly_array[:, 0] *= scale_x  # Scale x coordinates
-            poly_array[:, 1] *= scale_y  # Scale y coordinates
-            scaled_polygons.append(poly_array.astype(np.int32))
+        cv2.fillPoly(overlay, scaled_polygons, ColorBGR.gray)
+        for polygon in scaled_polygons:
+            cv2.polylines(overlay, [polygon], True, ColorBGR.blue, 2)
 
-        # Fill all polygons
-        cv2.fillPoly(overlay, scaled_polygons, (128, 128, 128))  # Gray color for mask
-
-        # Draw polygon borders
-        for scaled_polygon in scaled_polygons:
-            cv2.polylines(overlay, [scaled_polygon], True, (255, 0, 0), 2)  # Blue border
-
-        # Blend with original image (50% mask, 50% original)
-        result = cv2.addWeighted(overlay, 0.5, image, 0.5, 0)
-
-        return result
+        return cv2.addWeighted(overlay, 0.5, image, 0.5, 0)
     
     def separate_blur_and_figures(self, figures: List[Figure]) -> Tuple[List[Figure], List[Figure]]:
         blur_figures = list()
