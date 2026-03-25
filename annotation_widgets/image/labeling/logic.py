@@ -13,6 +13,7 @@ from annotation_widgets.image.logic import AbstractImageAnnotationLogic
 from enums import AnnotationMode, AnnotationStage, FigureType
 from exceptions import MessageBoxException
 from models import ProjectData
+from utils import open_json
 from .drawing import create_class_selection_wheel, get_selected_sector_id
 from .figure_controller import Mode, ObjectFigureController
 from .figure_controller_factory import ControllerByMode
@@ -40,9 +41,9 @@ class StatusData:
 class ImageLabelingLogic(AbstractImageAnnotationLogic):
 
     def __init__(self, data_path: str, project_data: ProjectData):
-    
-        self.img_names = sorted(os.listdir(data_path)) 
-        
+
+        self.img_names = sorted(os.listdir(data_path))
+
         if project_data.stage is AnnotationStage.CORRECTION:
             self.img_names = [item.name for item in LabeledImage.all() if len(item.review_labels) > 0]
         elif project_data.stage is AnnotationStage.REVIEW:
@@ -54,8 +55,8 @@ class ImageLabelingLogic(AbstractImageAnnotationLogic):
         for img_name in self.img_names: # Check that images from the directory are in the the database
             img_object = LabeledImage.get(name=img_name)
             if img_object is None:
-                raise MessageBoxException(f"{img_name} is not found in the database") 
-            
+                raise MessageBoxException(f"{img_name} is not found in the database")
+
         self.figures: List[Figure] = list()
         self.review_labels: List[ReviewLabel] = list()
         self.show_label_names = False
@@ -72,6 +73,10 @@ class ImageLabelingLogic(AbstractImageAnnotationLogic):
         self.init_canvas = None
         self.blurred_image: np.ndarray = None
         self.prev_blur_figures = list()
+
+        # Load camera masks
+        self.camera_masks = self._load_camera_masks(project_data.id)
+        self.current_camera_mask = None
 
         if project_data.stage is AnnotationStage.REVIEW:
             labels = Label.get_review_labels()
@@ -131,6 +136,61 @@ class ImageLabelingLogic(AbstractImageAnnotationLogic):
 
     def get_path_manager(self, project_id) -> LabelingPathManager:
         return LabelingPathManager(project_id)
+
+    def _load_camera_masks(self, project_id: int) -> Dict:
+        """Load camera masks from camera_masks.json if it exists"""
+        pm = self.get_path_manager(project_id)
+        if os.path.exists(pm.camera_masks_path):
+            return open_json(pm.camera_masks_path)
+        return {}
+
+    def _get_camera_id_from_filename(self, filename: str) -> str:
+        """Extract 8-character camera ID from image filename"""
+        return filename[:8]
+
+    def _apply_camera_mask(self, image: np.ndarray, camera_id: str) -> np.ndarray:
+        """Apply camera mask overlay to the image"""
+        if not self.camera_masks or camera_id not in self.camera_masks:
+            return image
+
+        mask_data = self.camera_masks[camera_id]
+
+        # Support both old format (single polygon) and new format (multiple polygons)
+        if "polygon" in mask_data:
+            polygons = [mask_data["polygon"]]
+        else:
+            polygons = mask_data["polygons"]
+
+        # Scale polygons to match current image resolution
+        mask_height = mask_data["height"]
+        mask_width = mask_data["width"]
+        img_height, img_width = image.shape[:2]
+
+        scale_x = img_width / mask_width
+        scale_y = img_height / mask_height
+
+        # Create semi-transparent overlay
+        overlay = image.copy()
+
+        # Process each polygon
+        scaled_polygons = []
+        for polygon in polygons:
+            poly_array = np.array(polygon, dtype=np.float32)
+            poly_array[:, 0] *= scale_x  # Scale x coordinates
+            poly_array[:, 1] *= scale_y  # Scale y coordinates
+            scaled_polygons.append(poly_array.astype(np.int32))
+
+        # Fill all polygons
+        cv2.fillPoly(overlay, scaled_polygons, (128, 128, 128))  # Gray color for mask
+
+        # Draw polygon borders
+        for scaled_polygon in scaled_polygons:
+            cv2.polylines(overlay, [scaled_polygon], True, (255, 0, 0), 2)  # Blue border
+
+        # Blend with original image (50% mask, 50% original)
+        result = cv2.addWeighted(overlay, 0.5, image, 0.5, 0)
+
+        return result
     
     def separate_blur_and_figures(self, figures: List[Figure]) -> Tuple[List[Figure], List[Figure]]:
         blur_figures = list()
@@ -263,6 +323,11 @@ class ImageLabelingLogic(AbstractImageAnnotationLogic):
         assert 0 <= self.item_id < len(self.img_names), f"The Image ID {self.item_id} is out of range of the images list: {len(self.img_names)}"
         img_name = self.img_names[self.item_id]
         self.orig_image = cv2.imread(os.path.join(self.img_dir, img_name))
+
+        # Apply camera mask overlay if available
+        camera_id = self._get_camera_id_from_filename(img_name)
+        self.orig_image = self._apply_camera_mask(self.orig_image, camera_id)
+
         self.blurred_image = None
         self.init_canvas = None
         self.prev_blur_figures = list()
@@ -278,7 +343,7 @@ class ImageLabelingLogic(AbstractImageAnnotationLogic):
         self.controller.img_height, self.controller.img_width = h, w
         self.labeled_image.height = h
         self.labeled_image.width = w
-    
+
         self.is_trash = self.labeled_image.trash
         self.controller.take_snapshot()
 
