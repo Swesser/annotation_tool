@@ -23,7 +23,3 @@ class LabelingPathManager(BasePathManager):
     @property
     def archive_path(self):
         return os.path.join(self.project_path, f"archive.zip")
-
-    @property
-    def camera_masks_path(self):
-        return os.path.join(self.project_path, f"camera_masks.json")
