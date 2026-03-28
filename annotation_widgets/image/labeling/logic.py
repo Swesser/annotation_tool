@@ -145,7 +145,9 @@ class ImageLabelingLogic(AbstractImageAnnotationLogic):
         return meta_data.get("camera_masks", {})
 
     def _get_camera_id_from_filename(self, filename: str) -> str:
-        """Extract camera ID from image filename (first 8 characters)"""
+        """Extract camera ID from image filename (strips 'ev_' prefix if present)"""
+        if filename.startswith('ev_'):
+            return filename[3:11]  # Skip 'ev_' and take next 8 chars
         return filename[:8]
 
     def _scale_polygon(self, polygon: List, scale_x: float, scale_y: float) -> np.ndarray:
